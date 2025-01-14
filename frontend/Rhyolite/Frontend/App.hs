@@ -307,15 +307,18 @@ runObeliskRhyoliteWidget ::
   , Monoid (QueryResult qFrontend)
   , FromJSON (QueryResult qWire)
   , ToJSON qWire
+  , MonadIO (Performable m)
+  , Eq qFrontend
   )
-  => QueryMorphism qFrontend qWire
+  => (Event t qWire -> m (Event t (QueryResult qFrontend)))
+  -> QueryMorphism qFrontend qWire
   -- ^ Wire format morphism
   -> Text -- ^ Typically "config/route", config file containing an http/https URL at which the backend will be served.
   -> Encoder Identity Identity (R (FullRoute backendRoute frontendRoute)) PageName -- ^ Checked route encoder
   -> R backendRoute -- ^ The "listen" backend route which is handled by the action produced by 'Rhyolite.Backend.App.serveDbOverWebsockets'
   -> RoutedT t (R frontendRoute) (RhyoliteWidget qFrontend req t m) a -- ^ Child widget
   -> RoutedT t (R frontendRoute) m (Dynamic t (AppWebSocket t qWire), a)
-runObeliskRhyoliteWidget toWire configRoute enc listenRoute child = do
+runObeliskRhyoliteWidget localQueryHandler toWire configRoute enc listenRoute child = do
   obR <- askRoute
   r' <- fmap (parseURI . T.unpack . T.strip . T.decodeUtf8) <$> getConfig configRoute
   let route = case r' of
@@ -323,7 +326,7 @@ runObeliskRhyoliteWidget toWire configRoute enc listenRoute child = do
         Just Nothing -> error $ T.unpack $ "malformed confing route: " <> configRoute
         Just (Just r) -> r
   let wsUrl = (T.pack $ show $ websocketUri route) <> (renderBackendRoute enc listenRoute)
-  lift $ runRhyoliteWidget toWire wsUrl $ flip runRoutedT obR $ child
+  lift $ runRhyoliteWidget localQueryHandler toWire wsUrl $ flip runRoutedT obR $ child
 
 -- | Runs a rhyolite frontend widget that opens a websocket connection and can
 -- issue requests and queries over that connection.
@@ -343,15 +346,18 @@ runRhyoliteWidget
       , Monoid (QueryResult qFrontend)
       , FromJSON (QueryResult qWire)
       , ToJSON qWire
+      , MonadIO (Performable m)
+      , Eq qFrontend
       )
-  => QueryMorphism qFrontend qWire
+  => (Event t qWire -> m (Event t (QueryResult qFrontend)))
+  -> QueryMorphism qFrontend qWire
   -- ^ Wire format morphism for queries
   -> Text
   -- ^ Websocket url
   -> RhyoliteWidget qFrontend req t m b
   -- ^ The widget to run. This widget can make requests/queries
   -> m (Dynamic t (AppWebSocket t qWire), b)
-runRhyoliteWidget toWire url child = do
+runRhyoliteWidget localQueryHandler toWire url child = do
   let defAppWebSocket = AppWebSocket
           { _appWebSocket_notification = never
           , _appWebSocket_response = never
@@ -372,7 +378,8 @@ runRhyoliteWidget toWire url child = do
       ((a, vs), request) <- flip runRequesterT (fmapMaybe (traverseRequesterData (fmap Identity)) response') $ runQueryT (unRhyoliteWidget child) view
       let (vsDyn :: Dynamic t qFrontend) = incrementalToDynamic (vs :: Incremental t (AdditivePatch qFrontend))
       nubbedVs <- holdUniqDyn (_queryMorphism_mapQuery toWire <$> vsDyn)
-      view <- fmap join $ prerender (pure mempty) $ fromNotifications vsDyn $ _queryMorphism_mapQueryResult toWire <$> notification
+      socketOrLocalNotifications <- fmap (switch . current) $ prerender (localQueryHandler $ updated nubbedVs) $ pure $ _queryMorphism_mapQueryResult toWire <$> notification
+      view <- fromNotifications vsDyn socketOrLocalNotifications
   return (dAppWebSocket, a)
   where
     reqEncoder :: forall a. req a -> (Aeson.Value, Aeson.Value -> Maybe a)
@@ -385,21 +392,24 @@ runRhyoliteWidget toWire url child = do
 
 -- | Receive the results of a 'Query' as a stream of 'Event's and combine them
 -- into a 'Dynamic' 'QueryResult'
-fromNotifications :: forall m (t :: *) q.
+fromNotifications :: forall m (t :: *) q x.
   ( Query q
   , MonadHold t m
-  , PerformEvent t m
-  , TriggerEvent t m
-  , MonadIO (Performable m)
+  , MonadHold t (Client m)
+  , PerformEvent t (Client m)
+  , TriggerEvent t (Client m)
+  , MonadIO (Performable (Client m))
   , Reflex t
   , MonadFix m
+  , MonadFix (Client m)
   , Monoid (QueryResult q)
+  , Prerender x t m
   )
   => Dynamic t q
   -> Event t (QueryResult q)
   -> m (Dynamic t (QueryResult q))
 fromNotifications vs ePatch = do
-  ePatchThrottled <- throttleBatchWithLag lag ePatch
+  ePatchThrottled <- fmap (switch . current) $ prerender (pure ePatch) $ throttleBatchWithLag lag ePatch
   foldDyn (\(vs', p) v -> crop vs' $ p <> v) mempty $ attach (current vs) ePatchThrottled
   where
     lag e = performEventAsync $ ffor e $ \a cb -> liftIO $ cb a
