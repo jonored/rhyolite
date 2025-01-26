@@ -1,4 +1,4 @@
-{ obelisk ? import ./.obelisk/impl (builtins.removeAttrs args ["pkgs"])
+{ obelisk ? import ./dep/obelisk (builtins.removeAttrs args ["pkgs" "inNixShell"])
 , pkgs ? obelisk.nixpkgs
 , ... } @ args:
 
@@ -15,17 +15,18 @@ let
   # Local packages. We override them below so that other packages can use them.
   rhyolitePackages = {
     rhyolite-backend = ./backend;
-    rhyolite-beam-task-worker = ./beam;
+    rhyolite-beam-db = ./beam/db;
+    rhyolite-beam-orphans = ./beam/orphans;
+    rhyolite-beam-task-worker-types = ./beam/task/types;
+    rhyolite-beam-task-worker-backend = ./beam/task/backend;
     rhyolite-notify-listen = ./notify-listen/notify-listen;
     rhyolite-notify-listen-beam = ./notify-listen/notify-listen-beam;
     psql-simple-class = ./psql-extras/psql-simple-class;
     psql-simple-beam = ./psql-extras/psql-simple-beam;
-    psql-simple-groundhog = ./psql-extras/psql-simple-groundhog;
     psql-serializable = ./psql-extras/psql-serializable;
-    rhyolite-groundhog-legacy = ./groundhog-legacy/groundhog-legacy;
-    rhyolite-groundhog-legacy-types = ./groundhog-legacy/groundhog-legacy-types;
     rhyolite-common = ./common;
     rhyolite-email = ./email;
+    mime-mail-orphans = ./email/mime-mail-orphans;
     semimap = ./semimap;
     rhyolite-frontend = ./frontend;
     signed-data = ./signed-data/signed-data;
@@ -38,15 +39,7 @@ let
   # srcs used for overrides
   overrideSrcs = rhyolitePackages // {
     bytestring-aeson-orphans = repos.bytestring-aeson-orphans;
-    bytestring-trie = repos.bytestring-trie;
-    dependent-monoidal-map = repos.dependent-monoidal-map;
-    groundhog = repos.groundhog + "/groundhog";
-    groundhog-postgresql = repos.groundhog + "/groundhog-postgresql";
-    groundhog-th = repos.groundhog + "/groundhog-th";
-    HaskellNet = repos.HaskellNet; # (super is marked as broken) unreleased fixes for newer GHC
-    HaskellNet-SSL = repos.HaskellNet-SSL; # (super is marked as broken)
     monoid-map = repos.monoid-map;
-    postgresql-simple = repos.postgresql-simple;  # v0.5.4.0 with a fix
     postgresql-simple-interpolate = repos.postgresql-simple-interpolate;
 
     # Newer versions than those in reflex-platform
@@ -54,12 +47,11 @@ let
     gargoyle-postgresql = repos.gargoyle + "/gargoyle-postgresql";
     gargoyle-postgresql-connect = repos.gargoyle + "/gargoyle-postgresql-connect";
     gargoyle-postgresql-nix = repos.gargoyle + "/gargoyle-postgresql-nix";
-    database-id-class = repos.database-id + "/class";
-    database-id-groundhog = repos.database-id + "/groundhog";
-    database-id-obelisk = repos.database-id + "/obelisk";
     push-notifications = repos.push-notifications;
     vessel = repos.vessel;
-    dependent-sum-aeson-orphans = repos.dependent-sum-aeson-orphans;
+    postgresql-lo-stream = repos.postgresql-lo-stream;
+    beam-automigrate = repos.beam-automigrate;
+
   };
 
   # You can use these manually if you don’t want to use rhyolite.project.
@@ -67,44 +59,36 @@ let
   haskellOverrides = lib.foldr lib.composeExtensions (_: _: {}) [
     (self: super: lib.mapAttrs (name: path: self.callCabal2nix name path {}) overrideSrcs)
     (self: super: {
-      beam-automigrate = haskellLib.doJailbreak super.beam-automigrate;
-      bytestring-trie = haskellLib.dontCheck super.bytestring-trie;
-      dependent-monoidal-map = haskellLib.doJailbreak super.dependent-monoidal-map;
+      frontend = super.frontend.override {
+        obelisk-executable-config-lookup = self.obelisk-executable-config-lookup;
+      };
       gargoyle-postgresql-nix = haskellLib.overrideCabal super.gargoyle-postgresql-nix {
         librarySystemDepends = [ pkgs.postgresql ];
       };
-      postgresql-simple = haskellLib.dontCheck (
-          haskellLib.overrideCabal super.postgresql-simple {
-            revision = null;
-            editedCabalFile = null;
-          }
-        );
       validation = haskellLib.dontCheck super.validation;
+      postgresql-lo-stream = haskellLib.markUnbroken super.postgresql-lo-stream;
 
-      postgresql-lo-stream = self.callHackageDirect {
-        pkg = "postgresql-lo-stream";
-        ver = "0.1.1.1";
-        sha256 = "0ifr6i6vygckj2nikv7k7yqia495gnn27pq6viasckmmh6zx6gwi";
+      HaskellNet-SSL = self.callHackage "HaskellNet-SSL" "0.3.4.4" {};
+
+      base-orphans = self.callHackageDirect {
+        pkg = "base-orphans";
+        ver = "0.8.6";
+        sha256 = "sha256:17hplm1mgw65jbszg5z4vqk4i24ilxv8mbszr3s8lhpll5naik26";
       } {};
 
-      monad-logger-extras = self.callHackageDirect {
-        pkg = "monad-logger-extras";
-        ver = "0.1.1.1";
-        sha256 = "17dr2jwg1ig1gd4hw7160vf3l5jcx5p79b2lz7k17f6v4ygx3vbz";
-      } {};
-      monoid-subclasses = self.callHackageDirect {
-        pkg = "monoid-subclasses";
-        ver = "1.1";
-        sha256 = "02ggjcwjdjh6cmy7zaji5mcmnq140sp33cg9rvwjgply6hkddrvb";
-      } {};
-      standalone-haddock = self.callHackage "standalone-haddock" "1.4.0.0" {};
+      aeson-qq = self.callHackage "aeson-qq" "0.8.4" {};
+      postgresql-syntax = haskellLib.dontCheck super.postgresql-syntax;
+      vessel = haskellLib.doJailbreak super.vessel;
+      monoid-map = haskellLib.doJailbreak super.monoid-map;
+
+      beam-migrate = self.callHackage "beam-migrate" "0.5.2.0" {};
 
       # 'locale' is broken on nix darwin which is required by postgres 'initdb'
-      rhyolite-beam-task-worker = if pkgs.stdenv.hostPlatform.isDarwin
+      rhyolite-beam-task-worker-backend = if pkgs.stdenv.hostPlatform.isDarwin
       then
-        haskellLib.dontCheck super.rhyolite-beam-task-worker
+        haskellLib.dontCheck super.rhyolite-beam-task-worker-backend
       else
-        super.rhyolite-beam-task-worker;
+        super.rhyolite-beam-task-worker-backend;
     })
   ];
 
@@ -142,6 +126,6 @@ in obelisk // {
         "rhyolite-frontend"
       ];
     };
-    tools = ghc: [ pkgs.postgresql pkgs.haskellPackages.standalone-haddock ];
+    tools = ghc: [ pkgs.postgresql ];
   });
 }

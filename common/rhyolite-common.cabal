@@ -20,7 +20,9 @@ library
     , async
     , attoparsec
     , base
+    , base-orphans >= 0.8.6
     , bytestring
+    , commutative-semigroups
     , constraints
     , constraints-extras
     , containers
@@ -35,17 +37,20 @@ library
     , network-uri
     , patch
     , reflex
-    , semialign               >=1   && <1.2
+    , semialign
     , semimap
     , some
     , text
-    , these                   >=1   && <1.1
+    , these
     , transformers
     , transformers-base
+    , unordered-containers
     , vessel
-    , witherable              >=0.2 && <0.4
+    , witherable
 
   exposed-modules:
+    Data.Vessel.Void
+    Rhyolite.Aeson.Orphans
     Rhyolite.Api
     Rhyolite.App
     Rhyolite.Concurrent
@@ -55,6 +60,8 @@ library
     Rhyolite.Vessel.ErrorV
     Rhyolite.Vessel.ErrorV.Internal
     Rhyolite.Vessel.Path
+    Rhyolite.Vessel.Types
+    Rhyolite.Vessel.App
     Rhyolite.WebSocket
 
   reexported-modules: aeson-gadt-th:Data.Aeson.GADT.TH as Data.Aeson.GADT

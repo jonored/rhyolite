@@ -25,16 +25,30 @@ Rhyolite provides:
    haskellOverrides. You can base it off of this example:
 
    ```
-   { system ? builtins.currentSystem # TODO: Get rid of this system cruft
-   , iosSdkVersion ? "10.2"
-   }:
-   with import ./.obelisk/impl { inherit system iosSdkVersion; };
+   { system ? builtins.currentSystem, obelisk ? import ./.obelisk/impl {
+     inherit system;
+     iosSdkVersion = "13.2";
+
+     # You must accept the Android Software Development Kit License Agreement at
+     # https://developer.android.com/studio/terms in order to build Android apps.
+     # Uncomment and set this to `true` to indicate your acceptance:
+     # config.android_sdk.accept_license = false;
+
+     # In order to use Let's Encrypt for HTTPS deployments you must accept
+     # their terms of service at https://letsencrypt.org/repository/.
+     # Uncomment and set this to `true` to indicate your acceptance:
+     # terms.security.acme.acceptTerms = false;
+   } }:
+   with obelisk;
    project ./. ({ pkgs, hackGet, ... }@args: {
 
-     overrides = pkgs.lib.composeExtensions (pkgs.callPackage (hackGet ./dep/rhyolite) args).haskellOverrides
-       (self: super: with pkgs.haskell.lib; {
-         # Your custom overrides go here.
-       });
+     overrides = pkgs.lib.composeExtensions
+       (pkgs.callPackage (hackGet ./dep/rhyolite) args).haskellOverrides
+       (self: super:
+         with pkgs.haskell.lib;
+         {
+           # Your custom overrides go here.
+         });
 
      android.applicationId = "systems.obsidian.obelisk.examples.minimal";
      android.displayName = "Obelisk Minimal Example";
@@ -60,8 +74,9 @@ with this Rhyolite thunk:
   "owner": "obsidiansystems",
   "repo": "rhyolite",
   "branch": "master",
-  "rev": "06b9851a101408a86a4ec0b7df5b2f71bc532ab0",
-  "sha256": "18adbc1nnj94qhggpcxmpd5i1rz0zx93cpphl09mw4c7s65rzah7"
+  "private": false,
+  "rev": "9f13d8d8a2233aae54e15c39acf68181893b859a",
+  "sha256": "1vhbw9bdqpfddavfjfdrq6kk5wwsd8hbgb8pnna9i2db3x3cmzvy"
 }
 ```
 
@@ -82,5 +97,5 @@ You can use `nix-shell -A proj.shells.ghc` to enter a shell from which you can b
 Because of the inter-related nature of these packages, `rhyolite-test-suite` tests that all of them can be built against one another. To test, run:
 
 ```bash
-nix-shell -A proj.shells.ghc --run cabal build test
+nix-shell -A proj.shells.ghc --run "cabal build test"
 ```

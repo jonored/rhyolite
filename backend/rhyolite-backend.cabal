@@ -16,11 +16,13 @@ library
   build-depends:
       aeson
     , base
+    , commutative-semigroups
     , constraints
     , constraints-extras
     , lens
     , monoid-map
     , monoidal-containers
+    , patch
     , postgresql-simple
     , reflex
     , resource-pool
@@ -35,7 +37,7 @@ library
     , vessel
     , websockets
     , websockets-snap
-    , witherable                 >=0.2 && <0.4
+    , witherable
 
   exposed-modules:
     Rhyolite.Backend.App

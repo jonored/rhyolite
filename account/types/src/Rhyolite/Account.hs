@@ -37,9 +37,21 @@ instance Table Account where
 
 instance Beamable (PrimaryKey Account)
 
+type AccountId = PrimaryKey Account Identity
+
 deriving instance Eq (PrimaryKey Account Identity)
 deriving instance Ord (PrimaryKey Account Identity)
 deriving instance Show (PrimaryKey Account Identity)
 
 instance ToJSON (PrimaryKey Account Identity)
 instance FromJSON (PrimaryKey Account Identity)
+instance ToJSONKey (PrimaryKey Account Identity)
+instance FromJSONKey (PrimaryKey Account Identity)
+
+newtype PasswordResetToken = PasswordResetToken
+  { unPasswordResetToken :: (PrimaryKey Account Identity, UTCTime)
+  }
+  deriving (Generic)
+
+instance ToJSON PasswordResetToken
+instance FromJSON PasswordResetToken

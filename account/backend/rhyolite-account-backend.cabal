@@ -13,6 +13,8 @@ category:           Web
 
 library
     exposed-modules:  Rhyolite.Backend.Account
+                      Rhyolite.Backend.Account.Db
+                      Rhyolite.Backend.Account.Notify
     build-depends:    base
                     , aeson
                     , beam-core
@@ -21,6 +23,7 @@ library
                     , time
                     , beam-postgres
                     , rhyolite-account-types
+                    , rhyolite-beam-db
                     , constraints
                     , constraints-extras
                     , pwstore-fast
